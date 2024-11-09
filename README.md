@@ -26,15 +26,15 @@ O desenvolvimento seguiu uma lógica de Programação Orientada a Objetos (POO) 
 
 | Modelo | Tempo de Transcrição* | Precisão | VRAM Requerida | Velocidade Relativa |
 | --- | --- | --- | --- | --- |
-| **Tiny** | 3 min | Baixa | ~1 GB | ~32x |
-| **Base** | 3 min | Média | ~1 GB | ~16x |
-| **Small** | 15 min | Alta | ~2 GB | ~6x |
-| **Medium** | 25 min | Muito Alta | ~5 GB | ~2x |
-| **Large-V1** | 1h 13min | Muito Alta | ~10 GB | 1x |
-| **Large-V2** | 1h 7min | Muito Alta | ~10 GB | 1x |
-| **Large-V3** | 1h 10min | Muito Alta | ~10 GB | 1x |
+| **Tiny** | 0,5 * TempoArquivo | Baixa | ~1 GB | ~32x |
+| **Base** | 0,5 * TempoArquivo | Média | ~1 GB | ~16x |
+| **Small** | 0,7 * TempoArquivo | Alta | ~2 GB | ~6x |
+| **Medium** | 1 *  TempoArquivo | Muito Alta | ~5 GB | ~2x |
+| **Large-V1** | 1,7 * TempoArquivo | Muito Alta | ~10 GB | 1x |
+| **Large-V2** | 1,7 * TempoArquivo | Muito Alta | ~10 GB | 1x |
+| **Large-V3** | 1,7 * TempoArquivo | Muito Alta | ~10 GB | 1x |
 
-\*O tempo estimado para a transcrição é de aproximadamente 1,50 vezes a duração do áudio, podendo variar conforme o hardware utilizado.
+\*O tempo estimado para a transcrição acima é de aproximadamente 1,50 vezes a duração do áudio, podendo variar conforme o hardware utilizado.
 
 ## Instalação
 
