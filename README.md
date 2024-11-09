@@ -2,9 +2,11 @@
 
 **TextifyVoice** é uma aplicação prática que combina o modelo Whisper ASR da OpenAI com uma interface gráfica simples e intuitiva. Ela serve como uma ferramenta versátil para transcrição de áudio e vídeo, permitindo ao usuário converter facilmente linguagem falada em texto escrito.
 
-Inicialmente, eu utilizava a biblioteca Whisper localmente no meu computador, manipulando os arquivos apenas por meio do prompt de comando. No entanto, conforme as solicitações para uso do Whisper em transcrições de vídeos se tornaram frequentes, percebi que essa necessidade era compartilhada por outras pessoas. Assim, surgiu a ideia de criar uma maneira mais acessível para aqueles que não têm contato frequente com tecnologia – especialmente para quem se sente intimidado ao utilizar o prompt de comando. A solução foi desenvolver uma aplicação desktop, com duas principais vantagens: ser gratuita e possibilitar transcrições sem a necessidade de conexão com a internet.
+Inicialmente, eu utilizava a biblioteca Whisper localmente no meu computador, manipulando os arquivos apenas por meio do prompt de comando. No entanto, conforme as solicitações para uso do Whisper em transcrições de vídeos se tornaram frequentes, percebi que essa necessidade era compartilhada por outras pessoas. Dessa forma, surgiu a ideia de criar uma maneira mais acessível para aqueles que não têm contato frequente com tecnologia—especialmente para quem se sente intimidado ao utilizar o prompt de comando. A solução foi desenvolver uma aplicação desktop com duas principais vantagens: ser gratuita e possibilitar transcrições sem a necessidade de conexão com a internet.
 
-## 🚀 Funcionalidades
+O desenvolvimento seguiu uma lógica de Programação Orientada a Objetos (POO) e modularidade, principalmente para evitar a repetição de código, com um desacoplamento que previne erros críticos na aplicação. O uso de multithreading e multiprocessing foi fundamental para a administração da Interface Gráfica do Usuário (GUI) e dos processamentos internos da aplicação, como o carregamento dos modelos Whisper e a manipulação de arquivos, evitando que a interface trave durante a execução dessas tarefas internas.
+
+## Funcionalidades
 
 - **Transcrição de Áudio e Vídeo**: Converta arquivos de áudio ou vídeo em texto com facilidade.
 - **Interface Gráfica Intuitiva**: Selecione e transcreva arquivos através de uma interface amigável.
@@ -14,18 +16,11 @@ Inicialmente, eu utilizava a biblioteca Whisper localmente no meu computador, ma
 - **Salvamento Automático**: As transcrições são salvas em arquivos `.docx` no mesmo diretório dos arquivos originais.
 - **Cancelamento de Processos**: Possibilidade de cancelar downloads de modelos e transcrições em andamento.
 
-## 📜 Requisitos
+## Requisitos
 
-### Sistemas Operacionais Compatíveis:
-
-| Sistema Operacional | Executável Pré-compilado | Como Módulo Python | A Partir do Git |
-| --- | --- | --- | --- |
-| **Windows** | ✔️ | ✔️ | ✔️ |
-| **macOS** | ❌ | ✔️ | ✔️ |
-| **Linux** | ❌ | ✔️ | ✔️ |
 - **Python 3.8 ou superior** (Recomendado Python 3.11) para instalação como módulo.
 - **FFmpeg**: Necessário para processar arquivos de vídeo. Certifique-se de que o FFmpeg está instalado e configurado no PATH do sistema.
-- **Conexão com a Internet**: Necessária apenas para download dos modelos e atualizações.
+- **Conexão com a Internet**: Necessária *apenas* para download dos modelos e atualizações.
 
 ### Requisitos de Hardware por Modelo:
 
@@ -39,9 +34,9 @@ Inicialmente, eu utilizava a biblioteca Whisper localmente no meu computador, ma
 | **Large-V2** | 1h 7min | Muito Alta | ~10 GB | 1x |
 | **Large-V3** | 1h 10min | Muito Alta | ~10 GB | 1x |
 
-\*Tempo estimado para transcrever 1 hora de áudio. Pode variar dependendo do hardware.
+\*O tempo estimado para a transcrição é de aproximadamente 1,50 vezes a duração do áudio, podendo variar conforme o hardware utilizado.
 
-## 🔧 Instalação
+## Instalação
 
 **FFmpeg** 
 
@@ -59,7 +54,7 @@ Também existe uma maneira de instalar manualmente [LINK](https://www.wikihow.co
 
 
 
-## 🛠️ Desenvolvimento
+## Desenvolvimento
 
 ### Configuração
 
