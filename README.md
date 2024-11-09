@@ -1,5 +1,7 @@
 # TextifyVoice - Transcrição de Áudio e Vídeo com Whisper
 
+*English version of the README[here](https://github.com/finnzao/TextifyVoiceDesktopPy/releases/tag/v1).*
+
 **TextifyVoice** é uma aplicação prática que combina o modelo Whisper ASR da OpenAI com uma interface gráfica simples e intuitiva. Ela serve como uma ferramenta versátil para transcrição de áudio e vídeo, permitindo ao usuário converter facilmente linguagem falada em texto escrito.
 
 Inicialmente, eu utilizava a biblioteca Whisper localmente no meu computador, manipulando os arquivos apenas por meio do prompt de comando. No entanto, conforme as solicitações para uso do Whisper em transcrições de vídeos se tornaram frequentes, percebi que essa necessidade era compartilhada por outras pessoas. Dessa forma, surgiu a ideia de criar uma maneira mais acessível para aqueles que não têm contato frequente com tecnologia—especialmente para quem se sente intimidado ao utilizar o prompt de comando. A solução foi desenvolver uma aplicação desktop com duas principais vantagens: ser gratuita e possibilitar transcrições sem a necessidade de conexão com a internet.
