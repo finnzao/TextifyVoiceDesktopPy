@@ -22,8 +22,6 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class ErrorHandlers:
-    """Classe para gerenciar exceções e erros"""
-
     class TranscriptionCancelledException(Exception):
         """Exceção para indicar cancelamento da transcrição."""
         pass
@@ -61,7 +59,6 @@ class ErrorHandlers:
 
 
 class Config:
-    """Classe para gerenciar configurações do aplicativo"""
 
     def __init__(self):
         self.CONFIG_FILE = self.resource_path("config.json")
@@ -117,7 +114,6 @@ class Config:
 
 
 class AudioProcessor:
-    """Classe para processamento de áudio"""
 
     def __init__(self, config):
         self.config = config
@@ -174,7 +170,6 @@ class AudioProcessor:
 
 
 class TranscriptionManager:
-    """Classe para gerenciar transcrições"""
 
     def __init__(self, config, audio_processor):
         self.config = config
@@ -312,7 +307,6 @@ class TranscriptionManager:
 
 
 class ModelDownloader:
-    """Classe para download de modelos"""
     MODELS_URLS = {
         "small": "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt",
         "medium": "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt",
@@ -384,8 +378,8 @@ class ModelDownloader:
                             # Se o tamanho total não for conhecido
                             elapsed_time = time.time() - start_time
                             speed = downloaded / elapsed_time if elapsed_time > 0 else 0
-                            progress_callback(f"Baixado {downloaded} bytes a {
-                                              speed:.2f} bytes/s")
+                            progress_callback(
+                                f"Baixado {downloaded} bytes a {speed:.2f} bytes/s")
                     else:
                         progress_callback(100)
                 session.close()
@@ -429,6 +423,7 @@ class GUI:
         self.model_downloader = ModelDownloader(self.config)
 
         self.root = tk.Tk()
+        self.root.withdraw()  # Oculta a janela principal inicialmente
         self.setup_main_window()
         self.setup_styles()
         self.create_widgets()
@@ -524,36 +519,98 @@ class GUI:
 
         self.quality_window = QualitySelectionWindow(self)
 
+    def show_loading_window(self):
+        self.loading_window = tk.Toplevel(self.root)
+        self.loading_window.title("Carregando")
+        self.loading_window.geometry("400x200")
+        self.loading_window.configure(bg=self.colors['background'])
+        self.loading_window.overrideredirect(True)
+        self.loading_window.grab_set()
+
+        if os.path.exists(self.config.ICON_PATH):
+            self.loading_window.iconbitmap(self.config.ICON_PATH)
+
+        # Centraliza a janela no meio da tela
+        self.root.update_idletasks()
+        width = 400
+        height = 200
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.loading_window.geometry(f"{width}x{height}+{x}+{y}")
+
+        # Cria um estilo personalizado para a janela de carregamento
+        style = ttk.Style()
+        style.configure("Loading.TFrame", background=self.colors['background'])
+        style.configure("Loading.TLabel",
+                        background=self.colors['background'],
+                        foreground=self.colors['foreground'],
+                        font=("Helvetica", 13))
+
+        main_frame = ttk.Frame(self.loading_window,
+                               style="Loading.TFrame", padding=20)
+        main_frame.pack(expand=True, fill=tk.BOTH)
+
+        progress_bar = ttk.Progressbar(
+            main_frame,
+            mode='indeterminate',
+            length=200
+        )
+        progress_bar.pack(pady=(0, 20))
+
+        progress_bar.start(10)
+
+        label = ttk.Label(
+            main_frame,
+            text="Carregando configurações iniciais, por favor aguarde...",
+            style="Loading.TLabel",
+            wraplength=360,
+            justify='center',
+        )
+
+        label.pack()
+
+        self.loading_window.update_idletasks()
+
     def on_closing(self):
         self.transcription_manager.stop_event.set()
         self.root.destroy()
 
+    def load_initial_configurations(self):
+        try:
+            self.check_initial_model()
+        except Exception as e:
+            logging.exception("Exceção ao carregar configurações iniciais")
+            self.root.after(0, lambda: ErrorHandlers.handle_exception(e))
+        finally:
+            self.root.after(0, self.loading_window.destroy)
+            self.root.after(0, self.root.deiconify)  # Sem parênteses
+
     def run(self):
-        self.root.after(10, self.check_initial_model)
+        self.show_loading_window()
+        Thread(target=self.load_initial_configurations).start()
         self.root.mainloop()
 
     def check_initial_model(self):
         model_path = self.config.config.get('model_path')
         if model_path:
+            model_valid = False
             try:
                 if not os.path.exists(model_path):
                     logging.warning("Modelo configurado não encontrado")
-                    self.show_quality_selection_window()
-                    return
-
-                if not self.transcription_manager.verify_model_file(model_path):
+                elif not self.transcription_manager.verify_model_file(model_path):
                     logging.warning("Modelo configurado está corrompido")
-                    self.show_quality_selection_window()
-                    return
-
-                self.transcription_manager.load_model(model_path)
-                logging.info("Modelo inicial carregado com sucesso")
+                else:
+                    self.transcription_manager.load_model(model_path)
+                    logging.info("Modelo inicial carregado com sucesso")
+                    model_valid = True
             except Exception as e:
-                ErrorHandlers.handle_exception(e)
-                self.show_quality_selection_window()
+                logging.exception("Erro ao carregar o modelo inicial")
+                model_valid = False
+            if not model_valid:
+                self.root.after(0, self.show_quality_selection_window)
         else:
             logging.info("Nenhum modelo configurado")
-            self.show_quality_selection_window()
+            self.root.after(0, self.show_quality_selection_window)
 
 
 class TranscriptionWindow:
@@ -562,6 +619,11 @@ class TranscriptionWindow:
     def __init__(self, main_gui):
         self.main_gui = main_gui
         self.window = tk.Toplevel(main_gui.root)
+
+        # Definir o ícone da janela
+        if os.path.exists(self.main_gui.config.ICON_PATH):
+            self.window.iconbitmap(self.main_gui.config.ICON_PATH)
+
         self.setup_window()
         self.create_widgets()
         self.current_item = None
@@ -740,6 +802,11 @@ class QualitySelectionWindow:
     def __init__(self, main_gui):
         self.main_gui = main_gui
         self.window = tk.Toplevel(main_gui.root)
+
+        # Definir o ícone da janela
+        if os.path.exists(self.main_gui.config.ICON_PATH):
+            self.window.iconbitmap(self.main_gui.config.ICON_PATH)
+
         self.setup_window()
         self.create_widgets()
         self.cancel_download = Event()
@@ -799,6 +866,10 @@ class QualitySelectionWindow:
         progress_window.geometry("400x200")
         progress_window.resizable(False, False)
         progress_window.grab_set()
+
+        # Definir o ícone da janela de progresso
+        if os.path.exists(self.main_gui.config.ICON_PATH):
+            progress_window.iconbitmap(self.main_gui.config.ICON_PATH)
 
         progress_var = tk.DoubleVar()
         progress_bar = ttk.Progressbar(
