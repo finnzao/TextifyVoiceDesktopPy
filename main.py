@@ -201,11 +201,12 @@ class TranscriptionManager:
                 return False
 
             file_size = os.path.getsize(model_path)
+            # Se o arquivo for menor do que 1 MB
             if file_size < 1000000:
                 logging.error(
                     f"Arquivo do modelo parece estar incompleto: {file_size} bytes")
                 return False
-
+            # GPU .:. cuda(Compute Unified Device Architecture)
             device = "cuda" if torch.cuda.is_available() else "cpu"
             whisper.load_model(model_path, device=device)
             logging.info(f"Modelo verificado com sucesso: {model_path}")
@@ -240,6 +241,7 @@ class TranscriptionManager:
             self.transcription_process.start()
 
             while self.transcription_process is not None and self.transcription_process.is_alive():
+                # Evitar Multiplo cliques
                 time.sleep(0.5)
                 if self.cancel_transcription:
                     if self.transcription_process is not None and self.transcription_process.is_alive():
@@ -331,6 +333,7 @@ class ModelDownloader:
             return True
         except Exception:
             return False
+    # CHANGE
 
     def download_model(self, model_name, progress_callback=None, cancel_event=None):
         url = self.MODELS_URLS[model_name]
@@ -346,10 +349,10 @@ class ModelDownloader:
                     logging.info(
                         f"Modelo já existe e está válido: {caminho_modelo}")
                     return caminho_modelo
-                else:
-                    os.remove(caminho_modelo)
-                    logging.info(
-                        f"Modelo corrompido removido: {caminho_modelo}")
+
+                os.remove(caminho_modelo)
+                logging.info(
+                    f"Modelo corrompido removido: {caminho_modelo}")
             except Exception as e:
                 ErrorHandlers.handle_exception(e)
                 os.remove(caminho_modelo)
@@ -362,10 +365,10 @@ class ModelDownloader:
                 response.raise_for_status()
                 total_size = int(response.headers.get('content-length', 0))
                 block_size = 1048576  # 1 MB
-
                 with open(caminho_modelo, 'wb') as f:
                     downloaded = 0
                     start_time = time.time()
+                    # Fazendo o download demorar
                     for data in response.iter_content(block_size):
                         if cancel_event and cancel_event.is_set():
                             raise Exception("Download cancelado pelo usuário")
@@ -513,6 +516,7 @@ class GUI:
         self.transcription_window = TranscriptionWindow(self)
 
     def show_quality_selection_window(self):
+        # hasattr -> Return whether the object has an attribute with the given name.
         if hasattr(self, 'quality_window') and self.quality_window and self.quality_window.winfo_exists():
             self.quality_window.lift()
             return
@@ -530,7 +534,6 @@ class GUI:
         if os.path.exists(self.config.ICON_PATH):
             self.loading_window.iconbitmap(self.config.ICON_PATH)
 
-        # Centraliza a janela no meio da tela
         self.root.update_idletasks()
         width = 400
         height = 200
@@ -538,7 +541,6 @@ class GUI:
         y = (self.root.winfo_screenheight() // 2) - (height // 2)
         self.loading_window.geometry(f"{width}x{height}+{x}+{y}")
 
-        # Cria um estilo personalizado para a janela de carregamento
         style = ttk.Style()
         style.configure("Loading.TFrame", background=self.colors['background'])
         style.configure("Loading.TLabel",
@@ -582,34 +584,38 @@ class GUI:
             logging.exception("Exceção ao carregar configurações iniciais")
             self.root.after(0, lambda: ErrorHandlers.handle_exception(e))
         finally:
+            # Remover janela de carregamento
             self.root.after(0, self.loading_window.destroy)
-            self.root.after(0, self.root.deiconify)  # Sem parênteses
+            # Sobresair janela principal
+            self.root.after(0, self.root.deiconify)
 
     def run(self):
-        self.show_loading_window()
+        self.show_loading_window()  # Mostra a janela de carregamento
         Thread(target=self.load_initial_configurations).start()
-        self.root.mainloop()
+        self.root.mainloop()  # Inicia o loop principal da interface gráfica
 
     def check_initial_model(self):
         model_path = self.config.config.get('model_path')
-        if model_path:
-            model_valid = False
-            try:
-                if not os.path.exists(model_path):
-                    logging.warning("Modelo configurado não encontrado")
-                elif not self.transcription_manager.verify_model_file(model_path):
-                    logging.warning("Modelo configurado está corrompido")
-                else:
-                    self.transcription_manager.load_model(model_path)
-                    logging.info("Modelo inicial carregado com sucesso")
-                    model_valid = True
-            except Exception as e:
-                logging.exception("Erro ao carregar o modelo inicial")
-                model_valid = False
-            if not model_valid:
-                self.root.after(0, self.show_quality_selection_window)
-        else:
+        if not model_path:
             logging.info("Nenhum modelo configurado")
+            self.root.after(0, self.show_quality_selection_window)
+            return
+        try:
+            if not os.path.exists(model_path):
+                logging.warning("Modelo configurado não encontrado")
+                self.root.after(0, self.show_quality_selection_window)
+                return
+
+            if not self.transcription_manager.verify_model_file(model_path):
+                logging.warning("Modelo configurado está corrompido")
+                self.root.after(0, self.show_quality_selection_window)
+                return
+
+            self.transcription_manager.load_model(model_path)
+            logging.info("Modelo inicial carregado com sucesso")
+
+        except Exception as e:
+            logging.exception("Erro ao carregar o modelo inicial")
             self.root.after(0, self.show_quality_selection_window)
 
 
@@ -620,7 +626,6 @@ class TranscriptionWindow:
         self.main_gui = main_gui
         self.window = tk.Toplevel(main_gui.root)
 
-        # Definir o ícone da janela
         if os.path.exists(self.main_gui.config.ICON_PATH):
             self.window.iconbitmap(self.main_gui.config.ICON_PATH)
 
@@ -803,7 +808,6 @@ class QualitySelectionWindow:
         self.main_gui = main_gui
         self.window = tk.Toplevel(main_gui.root)
 
-        # Definir o ícone da janela
         if os.path.exists(self.main_gui.config.ICON_PATH):
             self.window.iconbitmap(self.main_gui.config.ICON_PATH)
 
@@ -828,7 +832,7 @@ class QualitySelectionWindow:
         label.pack(pady=20)
 
         model_path = self.main_gui.config.config.get('model_path', '')
-        default_model_name = "medium"  # Padrão caso não encontre
+        default_model_name = "medium"  # Default
 
         if model_path:
             default_model_name = os.path.splitext(
@@ -867,7 +871,6 @@ class QualitySelectionWindow:
         progress_window.resizable(False, False)
         progress_window.grab_set()
 
-        # Definir o ícone da janela de progresso
         if os.path.exists(self.main_gui.config.ICON_PATH):
             progress_window.iconbitmap(self.main_gui.config.ICON_PATH)
 
