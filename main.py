@@ -15,10 +15,23 @@ import requests
 import subprocess
 from platform import system
 import sys
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, freeze_support
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+
+
+class NoConsolePopen(subprocess.Popen):
+
+    def __init__(self, args, **kwargs):
+        if system() == 'Windows' and 'startupinfo' not in kwargs:
+            kwargs['startupinfo'] = subprocess.STARTUPINFO()
+            kwargs['startupinfo'].dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        super().__init__(args, **kwargs)
+
+
+# Substituindo subprocess.Popen pela classe personalizada
+subprocess.Popen = NoConsolePopen
 
 
 class ErrorHandlers:
@@ -37,7 +50,8 @@ class ErrorHandlers:
     @staticmethod
     def handle_subprocess_error(e):
         logging.error(f"Erro no subprocesso: {str(e)}")
-        messagebox.showerror("Erro", f"Ocorreu um erro ao processar o arquivo: {str(e)}")
+        messagebox.showerror(
+            "Erro", f"Ocorreu um erro ao processar o arquivo: {str(e)}")
 
     @staticmethod
     def handle_generic_error(e):
@@ -52,7 +66,8 @@ class ErrorHandlers:
     @staticmethod
     def handle_download_error(e):
         logging.error(f"Erro no download: {str(e)}")
-        messagebox.showerror("Erro", f"Ocorreu um erro durante o download: {str(e)}")
+        messagebox.showerror(
+            "Erro", f"Ocorreu um erro durante o download: {str(e)}")
 
 
 class Config:
@@ -70,12 +85,15 @@ class Config:
 
     def resource_path(self, relative_path):
         try:
+            # Modo de produção (PyInstaller)
             base_path = sys._MEIPASS
-        except Exception:
+        except AttributeError:
+            # Modo de desenvolvimento
             base_path = os.path.abspath(".")
+        # Retorna o caminho correto
         return os.path.join(base_path, relative_path)
 
-    def load_config(self):
+    def load_config(self):  # Os dados abaixo seram carregado e disponivel como um dicionario
         if not os.path.exists(self.CONFIG_FILE):
             with open(self.CONFIG_FILE, 'w') as f:
                 json.dump(self.DEFAULT_CONFIG, f, indent=4)
@@ -98,7 +116,8 @@ class Config:
             maxBytes=5*1024*1024,
             backupCount=5
         )
-        log_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        log_handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(levelname)s - %(message)s'))
         logger = logging.getLogger()
         logger.setLevel(logging.INFO)
         if logger.hasHandlers():
@@ -115,7 +134,8 @@ class AudioProcessor:
     def extract_audio(self, filepath, temp_dir):
         try:
             if not os.path.exists(self.FFMPEG_PATH):
-                raise FileNotFoundError(f"Executável do FFmpeg não encontrado em: {self.FFMPEG_PATH}")
+                raise FileNotFoundError(
+                    f"Executável do FFmpeg não encontrado em: {self.FFMPEG_PATH}")
             if not os.path.exists(temp_dir):
                 os.makedirs(temp_dir)
             else:
@@ -124,8 +144,10 @@ class AudioProcessor:
                 return filepath
             output_path = os.path.join(temp_dir, "temp_audio.aac")
             output_path = os.path.abspath(output_path)
-            command = [self.FFMPEG_PATH, '-i', filepath, '-acodec', 'aac', output_path, '-y']
-            result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            command = [self.FFMPEG_PATH, '-i', filepath,
+                       '-acodec', 'aac', output_path, '-y']
+            result = subprocess.run(
+                command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode != 0:
                 raise subprocess.CalledProcessError(result.returncode, command)
             return output_path
@@ -176,11 +198,13 @@ class TranscriptionManager:
     def verify_model_file(self, model_path):
         try:
             if not os.path.exists(model_path):
-                logging.error(f"Arquivo do modelo não encontrado: {model_path}")
+                logging.error(
+                    f"Arquivo do modelo não encontrado: {model_path}")
                 return False
             file_size = os.path.getsize(model_path)
             if file_size < 1000000:
-                logging.error(f"Arquivo do modelo parece estar incompleto: {file_size} bytes")
+                logging.error(f"Arquivo do modelo parece estar incompleto: {
+                              file_size} bytes")
                 return False
             device = "cuda" if torch.cuda.is_available() else "cpu"
             whisper.load_model(model_path, device=device)
@@ -190,7 +214,8 @@ class TranscriptionManager:
             ErrorHandlers.handle_exception(e)
             try:
                 os.remove(model_path)
-                logging.info(f"Arquivo de modelo corrompido removido: {model_path}")
+                logging.info(
+                    f"Arquivo de modelo corrompido removido: {model_path}")
             except Exception as del_e:
                 ErrorHandlers.handle_exception(del_e)
             return False
@@ -212,7 +237,8 @@ class TranscriptionManager:
                         self.transcription_process.join()
                         self.transcription_process = None
                     self.cancel_transcription = False
-                    raise ErrorHandlers.TranscriptionCancelledException("Transcrição cancelada pelo usuário")
+                    raise ErrorHandlers.TranscriptionCancelledException(
+                        "Transcrição cancelada pelo usuário")
             if not result_queue.empty():
                 result = result_queue.get()
                 if 'error' in result:
@@ -223,7 +249,8 @@ class TranscriptionManager:
                         output_callback(output_path)
                     return output_path
             else:
-                raise Exception("Processo de transcrição não retornou nenhum resultado.")
+                raise Exception(
+                    "Processo de transcrição não retornou nenhum resultado.")
         except ErrorHandlers.TranscriptionCancelledException:
             raise
         except Exception as e:
@@ -247,7 +274,8 @@ class TranscriptionManager:
             audio_path = audio_processor.extract_audio(filepath, temp_dir)
             result = model.transcribe(audio_path, language="pt")
             nome_arquivo = os.path.splitext(os.path.basename(filepath))[0]
-            local_salvamento = os.path.join(os.path.dirname(filepath), nome_arquivo + "_text.docx")
+            local_salvamento = os.path.join(os.path.dirname(
+                filepath), nome_arquivo + "_text.docx")
             doc = Document()
             for segment in result["segments"]:
                 doc.add_paragraph(segment["text"])
@@ -292,11 +320,13 @@ class ModelDownloader:
         if os.path.exists(caminho_modelo):
             try:
                 if self.verify_download(caminho_modelo):
-                    logging.info(f"Modelo já existe e está válido: {caminho_modelo}")
+                    logging.info(f"Modelo já existe e está válido: {
+                                 caminho_modelo}")
                     return caminho_modelo
                 else:
                     os.remove(caminho_modelo)
-                    logging.info(f"Modelo corrompido removido: {caminho_modelo}")
+                    logging.info(f"Modelo corrompido removido: {
+                                 caminho_modelo}")
             except Exception as e:
                 ErrorHandlers.handle_exception(e)
                 if os.path.exists(caminho_modelo):
@@ -323,20 +353,24 @@ class ModelDownloader:
                             else:
                                 elapsed = time.time() - start_time
                                 speed = downloaded / elapsed if elapsed > 0 else 0
-                                progress_callback(f"Baixado {downloaded} bytes a {speed:.2f} bytes/s")
+                                progress_callback(f"Baixado {downloaded} bytes a {
+                                                  speed:.2f} bytes/s")
                 if self.verify_download(caminho_modelo, total_size if total_size > 0 else None):
-                    logging.info(f"Download do modelo concluído com sucesso: {caminho_modelo}")
+                    logging.info(f"Download do modelo concluído com sucesso: {
+                                 caminho_modelo}")
                     return caminho_modelo
                 else:
                     if os.path.exists(caminho_modelo):
                         os.remove(caminho_modelo)
-                    raise Exception("Arquivo baixado está corrompido ou incompleto")
+                    raise Exception(
+                        "Arquivo baixado está corrompido ou incompleto")
             except requests.RequestException as e:
                 ErrorHandlers.handle_download_error(e)
                 if os.path.exists(caminho_modelo):
                     os.remove(caminho_modelo)
                 if tentativa == max_tentativas - 1:
-                    raise Exception(f"Falha após {max_tentativas} tentativas de download")
+                    raise Exception(
+                        f"Falha após {max_tentativas} tentativas de download")
                 continue
             except Exception as e:
                 ErrorHandlers.handle_download_error(e)
@@ -345,7 +379,8 @@ class ModelDownloader:
                 if str(e) == "Download cancelado pelo usuário":
                     raise e
                 if tentativa == max_tentativas - 1:
-                    raise Exception(f"Falha após {max_tentativas} tentativas de download")
+                    raise Exception(
+                        f"Falha após {max_tentativas} tentativas de download")
                 continue
 
 
@@ -353,7 +388,8 @@ class GUI:
     def __init__(self):
         self.config = Config()
         self.audio_processor = AudioProcessor(self.config)
-        self.transcription_manager = TranscriptionManager(self.config, self.audio_processor)
+        self.transcription_manager = TranscriptionManager(
+            self.config, self.audio_processor)
         self.model_downloader = ModelDownloader(self.config)
         self.root = tk.Tk()
         self.root.withdraw()
@@ -403,16 +439,21 @@ class GUI:
         title_frame = ttk.Frame(self.root, style="TFrame", height=70)
         title_frame.pack(side=tk.TOP, fill=tk.X)
         title_frame.pack_propagate(False)
-        titulo = ttk.Label(title_frame, text="TextifyVoice", style="Title.TLabel", anchor="center")
+        titulo = ttk.Label(title_frame, text="TextifyVoice",
+                           style="Title.TLabel", anchor="center")
         titulo.pack(side=tk.TOP, fill=tk.X, pady=20)
         self.main_frame = ttk.Frame(self.root, style="TFrame")
         self.main_frame.pack(expand=True, fill=tk.BOTH, padx=20, pady=20)
-        self.instruction_text = tk.StringVar(value="Selecione os arquivos de áudio ou vídeo para transcrever.")
-        instruction_label = ttk.Label(self.main_frame, textvariable=self.instruction_text, wraplength=650, style="TLabel")
+        self.instruction_text = tk.StringVar(
+            value="Selecione os arquivos de áudio ou vídeo para transcrever.")
+        instruction_label = ttk.Label(
+            self.main_frame, textvariable=self.instruction_text, wraplength=650, style="TLabel")
         instruction_label.pack()
-        self.btn_select = ttk.Button(self.main_frame, text="Selecionar Arquivos", command=self.show_file_selection_window, style="TButton")
+        self.btn_select = ttk.Button(self.main_frame, text="Selecionar Arquivos",
+                                     command=self.show_file_selection_window, style="TButton")
         self.btn_select.pack(pady=(10, 0))
-        self.btn_quality = ttk.Button(self.main_frame, text="Selecionar Qualidade", command=self.show_quality_selection_window, style="Modelo.TButton")
+        self.btn_quality = ttk.Button(self.main_frame, text="Selecionar Qualidade",
+                                      command=self.show_quality_selection_window, style="Modelo.TButton")
         self.btn_quality.pack(pady=(10, 0))
 
     def show_file_selection_window(self):
@@ -444,13 +485,17 @@ class GUI:
         self.loading_window.geometry(f"{width}x{height}+{x}+{y}")
         style = ttk.Style()
         style.configure("Loading.TFrame", background=self.colors['background'])
-        style.configure("Loading.TLabel", background=self.colors['background'], foreground=self.colors['foreground'], font=("Helvetica", 13))
-        main_frame = ttk.Frame(self.loading_window, style="Loading.TFrame", padding=20)
+        style.configure("Loading.TLabel", background=self.colors['background'],
+                        foreground=self.colors['foreground'], font=("Helvetica", 13))
+        main_frame = ttk.Frame(self.loading_window,
+                               style="Loading.TFrame", padding=20)
         main_frame.pack(expand=True, fill=tk.BOTH)
-        progress_bar = ttk.Progressbar(main_frame, mode='indeterminate', length=200)
+        progress_bar = ttk.Progressbar(
+            main_frame, mode='indeterminate', length=200)
         progress_bar.pack(pady=(0, 20))
         progress_bar.start(10)
-        label = ttk.Label(main_frame, text="Carregando configurações iniciais, por favor aguarde...", style="Loading.TLabel", wraplength=360, justify='center')
+        label = ttk.Label(main_frame, text="Carregando configurações iniciais, por favor aguarde...",
+                          style="Loading.TLabel", wraplength=360, justify='center')
         label.pack()
         self.loading_window.update_idletasks()
 
@@ -513,19 +558,23 @@ class TranscriptionWindow:
         self.window.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def create_widgets(self):
-        self.btn_add = ttk.Button(self.window, text="Adicionar Arquivo", command=self.add_files, style="Selecao.TButton")
+        self.btn_add = ttk.Button(
+            self.window, text="Adicionar Arquivo", command=self.add_files, style="Selecao.TButton")
         self.btn_add.pack(pady=10)
         self.create_file_list()
         self.buttons_frame = ttk.Frame(self.window, style="Selecao.TFrame")
         self.buttons_frame.pack(pady=10)
-        self.btn_start = ttk.Button(self.buttons_frame, text="Iniciar Transcrição", command=self.start_transcription, style="Selecao.TButton")
-        self.btn_cancel = ttk.Button(self.buttons_frame, text="Cancelar", command=self.on_closing, style="Selecao.TButton")
+        self.btn_start = ttk.Button(self.buttons_frame, text="Iniciar Transcrição",
+                                    command=self.start_transcription, style="Selecao.TButton")
+        self.btn_cancel = ttk.Button(
+            self.buttons_frame, text="Cancelar", command=self.on_closing, style="Selecao.TButton")
         self.btn_start.pack(side=tk.LEFT, padx=5)
         self.btn_cancel.pack(side=tk.LEFT, padx=5)
 
     def create_file_list(self):
         columns = ('Arquivo', 'Status', 'Transcrito')
-        self.file_list = ttk.Treeview(self.window, columns=columns, show='headings')
+        self.file_list = ttk.Treeview(
+            self.window, columns=columns, show='headings')
         self.file_list.heading('Arquivo', text='Arquivo')
         self.file_list.heading('Status', text='Status')
         self.file_list.heading('Transcrito', text='')
@@ -539,7 +588,8 @@ class TranscriptionWindow:
         filepaths = filedialog.askopenfilenames(
             title="Escolha os arquivos de áudio ou vídeo para transcrever",
             filetypes=[
-                ("Arquivos suportados", "*.mp4;*.mp3;*.wav;*.mkv;*.aac;*.flac;*.m4a;*.ogg"),
+                ("Arquivos suportados",
+                 "*.mp4;*.mp3;*.wav;*.mkv;*.aac;*.flac;*.m4a;*.ogg"),
                 ("Arquivos MP4", "*.mp4"),
                 ("Arquivos MP3", "*.mp3"),
                 ("Arquivos WAV", "*.wav"),
@@ -551,7 +601,8 @@ class TranscriptionWindow:
         )
         for filepath in filepaths:
             if not self.file_exists_in_list(filepath):
-                self.file_list.insert('', 'end', values=(filepath, 'Preparado', ''))
+                self.file_list.insert(
+                    '', 'end', values=(filepath, 'Preparado', ''))
 
     def file_exists_in_list(self, filepath):
         for item in self.file_list.get_children():
@@ -577,12 +628,14 @@ class TranscriptionWindow:
             status = values[1]
             if status not in ['Finalizado', 'Cancelado', 'Erro']:
                 self.current_item = item
-                self.file_list.set(item, 'Status', 'Transcrição em progresso...')
+                self.file_list.set(
+                    item, 'Status', 'Transcrição em progresso...')
                 try:
                     filepath = values[0]
                     result_path = self.main_gui.transcription_manager.transcribe_file(
                         filepath,
-                        lambda path: self.update_transcription_result(item, path)
+                        lambda path: self.update_transcription_result(
+                            item, path)
                     )
                     self.file_list.set(item, 'Status', 'Finalizado')
                     self.file_list.set(item, 'Transcrito', result_path)
@@ -597,9 +650,11 @@ class TranscriptionWindow:
         self.btn_start.config(state=tk.NORMAL)
         self.btn_add.config(state=tk.NORMAL)
         if not self.main_gui.transcription_manager.cancel_transcription:
-            messagebox.showinfo("Concluído", "Todas as transcrições foram finalizadas!")
+            messagebox.showinfo(
+                "Concluído", "Todas as transcrições foram finalizadas!")
         else:
-            messagebox.showinfo("Cancelado", "A transcrição foi cancelada pelo usuário.")
+            messagebox.showinfo(
+                "Cancelado", "A transcrição foi cancelada pelo usuário.")
             self.main_gui.transcription_manager.cancel_transcription = False
 
     def update_transcription_result(self, item, path):
@@ -614,9 +669,11 @@ class TranscriptionWindow:
                 if os.path.exists(transcribed_file):
                     os.startfile(os.path.dirname(transcribed_file))
                 else:
-                    messagebox.showerror("Erro", "Arquivo transcrito não encontrado.")
+                    messagebox.showerror(
+                        "Erro", "Arquivo transcrito não encontrado.")
             else:
-                messagebox.showinfo("Info", "Arquivo ainda não foi transcrito.")
+                messagebox.showinfo(
+                    "Info", "Arquivo ainda não foi transcrito.")
 
     def on_closing(self):
         if self.main_gui.transcription_manager.is_transcribing:
@@ -628,7 +685,8 @@ class TranscriptionWindow:
                     transcription_process.join()
                     self.main_gui.transcription_manager.transcription_process = None
                 if self.current_item:
-                    self.file_list.set(self.current_item, 'Status', 'Cancelado')
+                    self.file_list.set(self.current_item,
+                                       'Status', 'Cancelado')
                 self.main_gui.transcription_manager.is_transcribing = False
             else:
                 pass
@@ -660,18 +718,22 @@ class QualitySelectionWindow:
         return self.window.winfo_exists()
 
     def create_widgets(self):
-        label = ttk.Label(self.window, text="Escolha um dos modelos de transcrição:", style="TLabel")
+        label = ttk.Label(
+            self.window, text="Escolha um dos modelos de transcrição:", style="TLabel")
         label.pack(pady=20)
         model_path = self.main_gui.config.config.get('model_path', '')
         default_model_name = "medium"
         if model_path:
-            default_model_name = os.path.splitext(os.path.basename(model_path))[0]
+            default_model_name = os.path.splitext(
+                os.path.basename(model_path))[0]
             if default_model_name not in self.main_gui.model_downloader.MODELS_URLS:
                 default_model_name = "medium"
         self.quality_var = tk.StringVar(value=default_model_name)
-        self.quality_dropdown = ttk.OptionMenu(self.window, self.quality_var, self.quality_var.get(), *self.main_gui.model_downloader.MODELS_URLS.keys())
+        self.quality_dropdown = ttk.OptionMenu(self.window, self.quality_var, self.quality_var.get(
+        ), *self.main_gui.model_downloader.MODELS_URLS.keys())
         self.quality_dropdown.pack(pady=10)
-        self.btn_download = ttk.Button(self.window, text="Selecionar Modelo", command=self.download_model, style="TButton")
+        self.btn_download = ttk.Button(
+            self.window, text="Selecionar Modelo", command=self.download_model, style="TButton")
         self.btn_download.pack(pady=10)
 
     def lift(self):
@@ -688,27 +750,34 @@ class QualitySelectionWindow:
         if os.path.exists(self.main_gui.config.ICON_PATH):
             progress_window.iconbitmap(self.main_gui.config.ICON_PATH)
         progress_var = tk.DoubleVar()
-        progress_bar = ttk.Progressbar(progress_window, variable=progress_var, maximum=100)
+        progress_bar = ttk.Progressbar(
+            progress_window, variable=progress_var, maximum=100)
         progress_bar.pack(pady=20, padx=20, fill=tk.X)
-        progress_label = ttk.Label(progress_window, text="Baixando o modelo, por favor aguarde...")
+        progress_label = ttk.Label(
+            progress_window, text="Baixando o modelo, por favor aguarde...")
         progress_label.pack(pady=5)
-        btn_cancel_download = ttk.Button(progress_window, text="Cancelar Download", command=lambda: self.cancel_download_process(progress_window))
+        btn_cancel_download = ttk.Button(
+            progress_window, text="Cancelar Download", command=lambda: self.cancel_download_process(progress_window))
         btn_cancel_download.pack(pady=10)
-        progress_window.protocol("WM_DELETE_WINDOW", lambda: self.cancel_download_process(progress_window))
+        progress_window.protocol(
+            "WM_DELETE_WINDOW", lambda: self.cancel_download_process(progress_window))
         self.cancel_download.clear()
 
         def update_progress(progress):
-            self.window.after(0, lambda: self._update_progress_ui(progress, progress_var, progress_label, progress_window))
+            self.window.after(0, lambda: self._update_progress_ui(
+                progress, progress_var, progress_label, progress_window))
 
         def download_thread():
             try:
-                model_path = self.main_gui.model_downloader.download_model(model_name, progress_callback=update_progress, cancel_event=self.cancel_download)
+                model_path = self.main_gui.model_downloader.download_model(
+                    model_name, progress_callback=update_progress, cancel_event=self.cancel_download)
                 if self.main_gui.transcription_manager.verify_model_file(model_path):
                     self.main_gui.config.config['model_path'] = model_path
                     self.main_gui.config.save_config()
                     if progress_window.winfo_exists():
                         progress_window.destroy()
-                    messagebox.showinfo("Sucesso", "Modelo baixado e verificado com sucesso!")
+                    messagebox.showinfo(
+                        "Sucesso", "Modelo baixado e verificado com sucesso!")
                     if self.window.winfo_exists():
                         self.window.destroy()
                 else:
@@ -717,9 +786,11 @@ class QualitySelectionWindow:
                 if progress_window.winfo_exists():
                     progress_window.destroy()
                 if str(e) == "Download cancelado pelo usuário":
-                    self.window.after(0, lambda: messagebox.showinfo("Cancelado", "O download foi cancelado pelo usuário."))
+                    self.window.after(0, lambda: messagebox.showinfo(
+                        "Cancelado", "O download foi cancelado pelo usuário."))
                 else:
-                    self.window.after(0, lambda e=e: messagebox.showerror("Erro", f"Erro ao baixar modelo: {str(e)}"))
+                    self.window.after(0, lambda e=e: messagebox.showerror(
+                        "Erro", f"Erro ao baixar modelo: {str(e)}"))
                 ErrorHandlers.handle_exception(e)
             finally:
                 self.window.after(0, self.reenable_download_button)
@@ -733,7 +804,8 @@ class QualitySelectionWindow:
                 progress_var.set(progress)
                 progress_label.config(text=f"Baixando... {progress:.2f}%")
                 if progress >= 100:
-                    progress_label.config(text="Verificando integridade do arquivo...")
+                    progress_label.config(
+                        text="Verificando integridade do arquivo...")
             else:
                 progress_label.config(text=str(progress))
 
@@ -761,5 +833,6 @@ def main():
     app.run()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    freeze_support()
     main()
