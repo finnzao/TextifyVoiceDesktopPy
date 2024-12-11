@@ -20,7 +20,6 @@ from multiprocessing import Process, Queue, freeze_support
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-
 class NoConsolePopen(subprocess.Popen):
 
     def __init__(self, args, **kwargs):
@@ -68,6 +67,10 @@ class ErrorHandlers:
         logging.error(f"Erro no download: {str(e)}")
         messagebox.showerror(
             "Erro", f"Ocorreu um erro durante o download: {str(e)}")
+
+
+def is_production():
+    return hasattr(sys, '_MEIPASS')
 
 
 class Config:
@@ -203,8 +206,7 @@ class TranscriptionManager:
                 return False
             file_size = os.path.getsize(model_path)
             if file_size < 1000000:
-                logging.error(f"Arquivo do modelo parece estar incompleto: {
-                              file_size} bytes")
+                logging.error(f"Arquivo do modelo parece estar incompleto: {file_size} bytes")
                 return False
             device = "cuda" if torch.cuda.is_available() else "cpu"
             whisper.load_model(model_path, device=device)
@@ -320,13 +322,11 @@ class ModelDownloader:
         if os.path.exists(caminho_modelo):
             try:
                 if self.verify_download(caminho_modelo):
-                    logging.info(f"Modelo já existe e está válido: {
-                                 caminho_modelo}")
+                    logging.info(f"Modelo já existe e está válido: {caminho_modelo}")
                     return caminho_modelo
                 else:
                     os.remove(caminho_modelo)
-                    logging.info(f"Modelo corrompido removido: {
-                                 caminho_modelo}")
+                    logging.info(f"Modelo corrompido removido: {caminho_modelo}")
             except Exception as e:
                 ErrorHandlers.handle_exception(e)
                 if os.path.exists(caminho_modelo):
@@ -353,11 +353,9 @@ class ModelDownloader:
                             else:
                                 elapsed = time.time() - start_time
                                 speed = downloaded / elapsed if elapsed > 0 else 0
-                                progress_callback(f"Baixado {downloaded} bytes a {
-                                                  speed:.2f} bytes/s")
+                                progress_callback(f"Baixado {downloaded} bytes a {speed:.2f} bytes/s")
                 if self.verify_download(caminho_modelo, total_size if total_size > 0 else None):
-                    logging.info(f"Download do modelo concluído com sucesso: {
-                                 caminho_modelo}")
+                    logging.info(f"Download do modelo concluído com sucesso: {caminho_modelo}")
                     return caminho_modelo
                 else:
                     if os.path.exists(caminho_modelo):
