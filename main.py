@@ -1,4 +1,5 @@
 import logging
+import math
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from threading import Thread, Event
@@ -16,6 +17,9 @@ import subprocess
 from platform import system
 import sys
 from multiprocessing import Process, Queue, freeze_support
+
+from advanced_settings import AdvancedSettingsWindow
+from transcription_settings import TranscriptionSettings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -185,6 +189,7 @@ class TranscriptionManager:
         self.is_transcribing = False
         self.cancel_transcription = False
         self.transcription_process = None
+        self.default_settings = TranscriptionSettings()
 
     def load_model(self, model_path):
         try:
@@ -222,14 +227,22 @@ class TranscriptionManager:
                 ErrorHandlers.handle_exception(del_e)
             return False
 
-    def transcribe_file(self, filepath, output_callback=None):
+    def transcribe_file(self, filepath, output_callback=None, settings=None):
         try:
             model_path = self.config.config['model_path']
             if not model_path:
                 raise Exception("Caminho do modelo não definido")
+            settings_obj = settings or self.default_settings
+            if isinstance(settings_obj, TranscriptionSettings):
+                settings_dict = settings_obj.to_dict()
+            elif isinstance(settings_obj, dict):
+                settings_dict = settings_obj
+            else:
+                raise TypeError("Configurações de transcrição inválidas")
             result_queue = Queue()
             self.transcription_process = Process(target=self.transcribe_file_process,
-                                                 args=(model_path, self.config.config, filepath, self.config.TEMP_DIR, result_queue))
+                                                 args=(model_path, self.config.config, filepath,
+                                                       self.config.TEMP_DIR, settings_dict, result_queue))
             self.transcription_process.start()
             while self.transcription_process is not None and self.transcription_process.is_alive():
                 time.sleep(0.5)
@@ -266,7 +279,7 @@ class TranscriptionManager:
             self.cancel_transcription = False
 
     @staticmethod
-    def transcribe_file_process(model_path, config_dict, filepath, temp_dir, result_queue):
+    def transcribe_file_process(model_path, config_dict, filepath, temp_dir, settings_dict, result_queue):
         try:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             model = whisper.load_model(model_path, device=device)
@@ -274,14 +287,29 @@ class TranscriptionManager:
             config.config = config_dict
             audio_processor = AudioProcessor(config)
             audio_path = audio_processor.extract_audio(filepath, temp_dir)
-            result = model.transcribe(audio_path, language="pt")
-            nome_arquivo = os.path.splitext(os.path.basename(filepath))[0]
-            local_salvamento = os.path.join(os.path.dirname(
-                filepath), nome_arquivo + "_text.docx")
-            doc = Document()
-            for segment in result["segments"]:
-                doc.add_paragraph(segment["text"])
-            doc.save(local_salvamento)
+            from transcription_settings import TranscriptionSettings
+
+            settings = TranscriptionSettings.from_dict(settings_dict)
+            transcribe_kwargs = {
+                "word_timestamps": settings.timestamp_mode == "word"
+            }
+            if settings.language_strategy == "manual" and settings.manual_language:
+                transcribe_kwargs["language"] = settings.manual_language
+            elif settings.language_strategy == "auto":
+                transcribe_kwargs["language"] = None
+            else:
+                transcribe_kwargs["language"] = None
+
+            if settings.quality_preset == "fast":
+                transcribe_kwargs.update({"beam_size": 1, "best_of": 1})
+            elif settings.quality_preset == "balanced":
+                transcribe_kwargs.update({"beam_size": 3, "best_of": 3})
+            elif settings.quality_preset == "accurate":
+                transcribe_kwargs.update({"beam_size": 5, "best_of": 5})
+
+            result = model.transcribe(audio_path, **transcribe_kwargs)
+            local_salvamento = TranscriptionManager.format_output(
+                result, settings, filepath)
             if audio_path != filepath:
                 os.remove(audio_path)
             result_queue.put({'output_path': local_salvamento})
@@ -289,6 +317,171 @@ class TranscriptionManager:
             result_queue.put({'error': str(e)})
 
 
+    @staticmethod
+    def format_output(result, settings, original_filepath):
+        segments = result.get("segments", [])
+        base_dir = os.path.dirname(original_filepath)
+        base_name = os.path.splitext(os.path.basename(original_filepath))[0]
+        extension_map = {
+            "docx": ".docx",
+            "txt": ".txt",
+            "srt": ".srt",
+            "vtt": ".vtt",
+            "json": ".json"
+        }
+        extension = extension_map.get(settings.output_format, ".docx")
+        output_path = os.path.join(base_dir, f"{base_name}_text{extension}")
+
+        if settings.output_format == "docx":
+            doc = Document()
+            for paragraph in TranscriptionManager._build_paragraph_texts(segments, settings):
+                doc.add_paragraph(paragraph)
+            doc.save(output_path)
+        elif settings.output_format == "txt":
+            paragraphs = TranscriptionManager._build_paragraph_texts(segments, settings)
+            with open(output_path, "w", encoding="utf-8") as fp:
+                fp.write("\n\n".join(paragraphs))
+        elif settings.output_format == "srt":
+            with open(output_path, "w", encoding="utf-8") as fp:
+                for index, segment in enumerate(segments, start=1):
+                    start = TranscriptionManager._format_timestamp_value(
+                        segment.get("start", 0.0), settings.timestamp_format, target="srt")
+                    end = TranscriptionManager._format_timestamp_value(
+                        segment.get("end", 0.0), settings.timestamp_format, target="srt")
+                    text = TranscriptionManager._clean_text(segment.get("text", ""), settings)
+                    fp.write(f"{index}\n{start} --> {end}\n{text.strip()}\n\n")
+        elif settings.output_format == "vtt":
+            with open(output_path, "w", encoding="utf-8") as fp:
+                fp.write("WEBVTT\n\n")
+                for segment in segments:
+                    start = TranscriptionManager._format_timestamp_value(
+                        segment.get("start", 0.0), settings.timestamp_format, target="vtt")
+                    end = TranscriptionManager._format_timestamp_value(
+                        segment.get("end", 0.0), settings.timestamp_format, target="vtt")
+                    text = TranscriptionManager._clean_text(segment.get("text", ""), settings)
+                    fp.write(f"{start} --> {end}\n{text.strip()}\n\n")
+        elif settings.output_format == "json":
+            payload = {
+                "text": result.get("text", ""),
+                "segments": [
+                    {
+                        "start": segment.get("start"),
+                        "end": segment.get("end"),
+                        "text": TranscriptionManager._clean_text(segment.get("text", ""), settings)
+                    }
+                    for segment in segments
+                ],
+                "settings": settings.to_dict()
+            }
+            with open(output_path, "w", encoding="utf-8") as fp:
+                json.dump(payload, fp, indent=4, ensure_ascii=False)
+        else:
+            doc = Document()
+            for paragraph in TranscriptionManager._build_paragraph_texts(segments, settings):
+                doc.add_paragraph(paragraph)
+            doc.save(output_path)
+
+        return output_path
+
+    @staticmethod
+    def _build_paragraph_texts(segments, settings):
+        paragraphs = []
+        for group in TranscriptionManager._group_segments(segments, settings):
+            if not group:
+                continue
+            if settings.include_timestamps:
+                if settings.timestamp_mode == "word":
+                    text = TranscriptionManager._format_word_level(group, settings)
+                else:
+                    timestamp = TranscriptionManager._format_timestamp_value(
+                        group[0].get("start", 0.0), settings.timestamp_format)
+                    combined = " ".join(segment.get("text", "").strip() for segment in group).strip()
+                    text = f"[{timestamp}] {combined}" if combined else ""
+            else:
+                text = " ".join(segment.get("text", "").strip() for segment in group).strip()
+            if not text:
+                continue
+            text = TranscriptionManager._clean_text(text, settings)
+            paragraphs.append(text)
+        return paragraphs
+
+    @staticmethod
+    def _group_segments(segments, settings):
+        if not segments:
+            return []
+        if settings.timestamp_mode == "paragraph" or settings.auto_paragraphs:
+            groups = []
+            current_group = []
+            last_end = None
+            # Map slider (0-100) to pause between 0.5s and 5s
+            pause_threshold = 0.5 + (settings.paragraph_sensitivity / 100.0) * 4.5
+            for segment in segments:
+                start = segment.get("start", 0.0) or 0.0
+                if last_end is not None and start - last_end > pause_threshold and current_group:
+                    groups.append(current_group)
+                    current_group = []
+                current_group.append(segment)
+                last_end = segment.get("end", start)
+            if current_group:
+                groups.append(current_group)
+            return groups
+        return [[segment] for segment in segments]
+
+    @staticmethod
+    def _format_word_level(group, settings):
+        word_fragments = []
+        for segment in group:
+            for word in segment.get("words", []) or []:
+                timestamp = TranscriptionManager._format_timestamp_value(
+                    word.get("start", segment.get("start", 0.0)),
+                    settings.timestamp_format)
+                word_text = word.get("word", "").strip()
+                if word_text:
+                    word_fragments.append(f"[{timestamp}] {word_text}")
+        if not word_fragments:
+            combined = " ".join(segment.get("text", "").strip() for segment in group).strip()
+            if not combined:
+                return ""
+            timestamp = TranscriptionManager._format_timestamp_value(
+                group[0].get("start", 0.0), settings.timestamp_format)
+            return f"[{timestamp}] {combined}"
+        return " ".join(word_fragments)
+
+    @staticmethod
+    def _clean_text(text, settings):
+        cleaned = text.strip()
+        if not settings.capitalization:
+            cleaned = cleaned.lower()
+        if not settings.punctuation:
+            cleaned = TranscriptionManager._remove_punctuation(cleaned)
+        return cleaned
+
+    @staticmethod
+    def _remove_punctuation(text):
+        return "".join(ch for ch in text if ch.isalnum() or ch.isspace())
+
+    @staticmethod
+    def _format_timestamp_value(seconds, fmt, target=None):
+        seconds = max(0.0, float(seconds or 0.0))
+        milliseconds = int(round(seconds * 1000))
+        hours, remainder = divmod(milliseconds, 3_600_000)
+        minutes, remainder = divmod(remainder, 60_000)
+        secs, millis = divmod(remainder, 1000)
+        if target == "srt":
+            return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
+        if target == "vtt":
+            return f"{hours:02}:{minutes:02}:{secs:02}.{millis:03}"
+        if fmt == "seconds":
+            return f"{seconds:.1f}s"
+        if fmt == "minutes":
+            total_minutes = hours * 60 + minutes
+            tenths = int((millis / 1000) * 10)
+            return f"{total_minutes:02}:{secs:02}.{tenths:01d}"
+        if fmt == "timecode":
+            fractional = seconds - math.floor(seconds)
+            frames = int(round(fractional * 25))
+            return f"{hours:02}:{minutes:02}:{secs:02}:{frames:02}"
+        return f"{hours:02}:{minutes:02}:{secs:02}.{millis:03}"
 class ModelDownloader:
     MODELS_URLS = {
         "small": "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt",
@@ -391,12 +584,15 @@ class GUI:
         self.model_downloader = ModelDownloader(self.config)
         self.root = tk.Tk()
         self.root.withdraw()
+        self.settings = TranscriptionSettings()
+        self.settings_badge_var = tk.StringVar()
         self.setup_main_window()
         self.setup_styles()
         self.create_widgets()
         self.transcription_window = None
         self.quality_window = None
         self.model_window = None
+        self.settings_window = None
 
     def setup_main_window(self):
         self.root.title("TextifyVoice [ 1.0 ] by@felipe.sh")
@@ -432,6 +628,8 @@ class GUI:
                         font=("Arial", 12))
         style.configure("Title.TLabel", background=self.colors['background'], foreground=self.colors['foreground'],
                         font=("Arial", 16, "bold"))
+        style.configure("SettingsBadge.TLabel", background=self.colors['background'],
+                        foreground=self.colors['accent'], font=("Arial", 10, "bold"))
 
     def create_widgets(self):
         title_frame = ttk.Frame(self.root, style="TFrame", height=70)
@@ -447,12 +645,21 @@ class GUI:
         instruction_label = ttk.Label(
             self.main_frame, textvariable=self.instruction_text, wraplength=650, style="TLabel")
         instruction_label.pack()
-        self.btn_select = ttk.Button(self.main_frame, text="Selecionar Arquivos",
+        badge = ttk.Label(self.main_frame, textvariable=self.settings_badge_var,
+                          style="SettingsBadge.TLabel")
+        badge.pack(pady=(8, 16))
+        button_row = ttk.Frame(self.main_frame, style="TFrame")
+        button_row.pack(pady=(0, 10))
+        self.btn_select = ttk.Button(button_row, text="Selecionar Arquivos",
                                      command=self.show_file_selection_window, style="TButton")
-        self.btn_select.pack(pady=(10, 0))
-        self.btn_quality = ttk.Button(self.main_frame, text="Selecionar Qualidade",
+        self.btn_select.pack(side=tk.LEFT, padx=5)
+        self.btn_quality = ttk.Button(button_row, text="Selecionar Qualidade",
                                       command=self.show_quality_selection_window, style="Modelo.TButton")
-        self.btn_quality.pack(pady=(10, 0))
+        self.btn_quality.pack(side=tk.LEFT, padx=5)
+        self.btn_settings = ttk.Button(button_row, text="Configurações Avançadas",
+                                       command=self.show_advanced_settings_window, style="TButton")
+        self.btn_settings.pack(side=tk.LEFT, padx=5)
+        self.update_settings_badge()
 
     def show_file_selection_window(self):
         if self.transcription_window and self.transcription_window.winfo_exists():
@@ -465,6 +672,16 @@ class GUI:
             self.quality_window.lift()
             return
         self.quality_window = QualitySelectionWindow(self)
+
+    def show_advanced_settings_window(self):
+        if self.settings_window and self.settings_window.window.winfo_exists():
+            self.settings_window.window.lift()
+            return
+        self.settings_window = AdvancedSettingsWindow(self, self.settings)
+
+    def update_settings_badge(self):
+        summary = self.settings.summary()
+        self.settings_badge_var.set(f"Resumo das configurações: {summary}")
 
     def show_loading_window(self):
         self.loading_window = tk.Toplevel(self.root)
@@ -633,7 +850,8 @@ class TranscriptionWindow:
                     result_path = self.main_gui.transcription_manager.transcribe_file(
                         filepath,
                         lambda path: self.update_transcription_result(
-                            item, path)
+                            item, path),
+                        settings=self.main_gui.settings
                     )
                     self.file_list.set(item, 'Status', 'Finalizado')
                     self.file_list.set(item, 'Transcrito', result_path)
