@@ -73,6 +73,7 @@ class AdvancedSettingsWindow:
         style.configure("Settings.TCheckbutton", background=bg, foreground=fg, font=("Segoe UI", 9))
         style.configure("Settings.TRadiobutton", background=bg, foreground=fg, font=("Segoe UI", 9))
 
+
     def create_widgets(self) -> None:
         main_container = ttk.Frame(self.window, style="Settings.TFrame")
         main_container.pack(expand=True, fill=tk.BOTH)
@@ -90,10 +91,23 @@ class AdvancedSettingsWindow:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
+        # Função de scroll com verificação de existência
         def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            except tk.TclError:
+                # Canvas foi destruído, remove o binding
+                try:
+                    self.window.unbind_all("<MouseWheel>")
+                except:
+                    pass
         
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        # Bind apenas para esta janela, não global
+        self.window.bind("<MouseWheel>", _on_mousewheel)
+        
+        # Remove o binding quando a janela for destruída
+        self.window.bind("<Destroy>", lambda e: self.window.unbind_all("<MouseWheel>"))
         
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -101,6 +115,7 @@ class AdvancedSettingsWindow:
         container = ttk.Frame(scrollable_frame, style="Settings.TFrame", padding=15)
         container.pack(expand=True, fill=tk.BOTH)
 
+        # Resto do código continua igual...
         # Botões de ação no topo
         button_frame = ttk.Frame(container, style="Settings.TFrame")
         button_frame.pack(fill=tk.X, pady=(0, 12))

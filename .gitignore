@@ -12,3 +12,6 @@ temp
 .model
 ffmpeg.exe
 *.png
+*.html
+*.ffpreset
+*.css
