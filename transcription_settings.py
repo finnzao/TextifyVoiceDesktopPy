@@ -61,7 +61,7 @@ class TranscriptionSettings:
     detect_speakers: bool = False
     punctuation: bool = True
     capitalization: bool = True
-    language_strategy: str = "auto"
+    language_strategy: str = "manual"
     manual_language: str = "pt"
     quality_preset: str = "balanced"
     paragraph_sensitivity: int = 50
@@ -143,17 +143,21 @@ class TranscriptionSettings:
 
 
 DEFAULT_PRESETS: Dict[str, Dict[str, Any]] = {
-    "Entrevista": {
+    "Padrão": {
         "output_format": "docx",
-        "include_timestamps": True,
+        "include_timestamps": False,
         "timestamp_mode": "segment",
-        "timestamp_format": "full",
+        "timestamp_format": "minutes",
         "auto_paragraphs": True,
-        "detect_speakers": True,
+        "detect_speakers": False,
         "punctuation": True,
         "capitalization": True,
-        "language_strategy": "auto",
-        "quality_preset": "accurate",
+        "language_strategy": "manual",
+        "manual_language": "pt",
+        "quality_preset": "balanced",
+        "paragraph_sensitivity": 50,
+        "remove_noise": False,
+        "normalize_audio": False,
     },
     "Aula": {
         "output_format": "txt",
@@ -164,8 +168,28 @@ DEFAULT_PRESETS: Dict[str, Dict[str, Any]] = {
         "detect_speakers": False,
         "punctuation": True,
         "capitalization": True,
-        "language_strategy": "auto",
+        "language_strategy": "manual",
+        "manual_language": "pt",
         "quality_preset": "balanced",
+        "paragraph_sensitivity": 50,
+        "remove_noise": False,
+        "normalize_audio": False,
+    },
+    "Entrevista": {
+        "output_format": "docx",
+        "include_timestamps": True,
+        "timestamp_mode": "segment",
+        "timestamp_format": "full",
+        "auto_paragraphs": True,
+        "detect_speakers": True,
+        "punctuation": True,
+        "capitalization": True,
+        "language_strategy": "manual",
+        "manual_language": "pt",
+        "quality_preset": "accurate",
+        "paragraph_sensitivity": 50,
+        "remove_noise": False,
+        "normalize_audio": False,
     },
     "Reunião": {
         "output_format": "docx",
@@ -176,8 +200,12 @@ DEFAULT_PRESETS: Dict[str, Dict[str, Any]] = {
         "detect_speakers": True,
         "punctuation": True,
         "capitalization": True,
-        "language_strategy": "auto",
+        "language_strategy": "manual",
+        "manual_language": "pt",
         "quality_preset": "balanced",
+        "paragraph_sensitivity": 50,
+        "remove_noise": False,
+        "normalize_audio": False,
     },
     "Podcast": {
         "output_format": "srt",
@@ -188,8 +216,12 @@ DEFAULT_PRESETS: Dict[str, Dict[str, Any]] = {
         "detect_speakers": False,
         "punctuation": True,
         "capitalization": True,
-        "language_strategy": "auto",
+        "language_strategy": "manual",
+        "manual_language": "pt",
         "quality_preset": "fast",
+        "paragraph_sensitivity": 50,
+        "remove_noise": False,
+        "normalize_audio": False,
     },
 }
 

@@ -101,89 +101,9 @@ class AdvancedSettingsWindow:
         container = ttk.Frame(scrollable_frame, style="Settings.TFrame", padding=15)
         container.pack(expand=True, fill=tk.BOTH)
 
-        presets_frame = ttk.LabelFrame(container, text="Presets Pré-configurados", 
-                                       style="SettingsSection.TLabelframe", padding=12)
-        presets_frame.pack(fill=tk.X, pady=(0, 12))
-        
-        desc_label = ttk.Label(presets_frame, 
-                               text="Carregue configurações prontas para diferentes tipos de conteúdo",
-                               style="SettingsDesc.TLabel")
-        desc_label.pack(anchor=tk.W, pady=(0, 6))
-        
-        preset_controls = ttk.Frame(presets_frame, style="Settings.TFrame")
-        preset_controls.pack(fill=tk.X)
-        
-        ttk.Label(preset_controls, text="Preset:", style="Settings.TLabel").pack(side=tk.LEFT, padx=(0, 6))
-        
-        preset_names = sorted(self.settings.available_presets().keys())
-        self.preset_var = tk.StringVar(value=preset_names[0] if preset_names else "")
-        
-        self.preset_combo = ttk.Combobox(
-            preset_controls,
-            textvariable=self.preset_var,
-            values=preset_names,
-            state="readonly",
-            width=25,
-        )
-        self.preset_combo.pack(side=tk.LEFT, padx=(0, 6))
-        self.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
-        
-        ttk.Button(
-            preset_controls,
-            text="Aplicar",
-            command=self.load_selected_preset,
-            style="SettingsSmall.TButton",
-        ).pack(side=tk.LEFT)
-
-        self.notebook = ttk.Notebook(container)
-        self.notebook.pack(expand=True, fill=tk.BOTH, pady=(0, 12))
-
-        self.create_format_tab()
-        self.create_timestamp_tab()
-        self.create_formatting_tab()
-        self.create_language_tab()
-        self.create_quality_tab()
-
-        preview_frame = ttk.LabelFrame(container, text="Prévia da Transcrição", 
-                                       style="SettingsSection.TLabelframe", padding=12)
-        preview_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
-        
-        preview_desc = ttk.Label(preview_frame,
-                                text="Veja como suas configurações afetarão o resultado final",
-                                style="SettingsDesc.TLabel")
-        preview_desc.pack(anchor=tk.W, pady=(0, 6))
-        
-        preview_scroll_frame = ttk.Frame(preview_frame, style="Settings.TFrame")
-        preview_scroll_frame.pack(fill=tk.BOTH, expand=True)
-        
-        preview_scrollbar = ttk.Scrollbar(preview_scroll_frame)
-        preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        self.preview_widget = tk.Text(
-            preview_scroll_frame,
-            height=6,
-            wrap="word",
-            bg="#0d1117",
-            fg="#c9d1d9",
-            relief="flat",
-            font=("Consolas", 9),
-            padx=12,
-            pady=10,
-            yscrollcommand=preview_scrollbar.set
-        )
-        self.preview_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        preview_scrollbar.config(command=self.preview_widget.yview)
-        
-        self.preview_widget.tag_configure("timestamp", foreground="#58a6ff", font=("Consolas", 8, "bold"))
-        self.preview_widget.tag_configure("speaker", foreground="#f78166", font=("Consolas", 9, "bold"))
-        self.preview_widget.tag_configure("text", foreground="#c9d1d9")
-        self.preview_widget.tag_configure("paragraph_break", spacing1=8)
-        
-        self.preview_widget.insert("1.0", "")
-        self.preview_widget.configure(state=tk.DISABLED)
-
+        # Botões de ação no topo
         button_frame = ttk.Frame(container, style="Settings.TFrame")
-        button_frame.pack(fill=tk.X)
+        button_frame.pack(fill=tk.X, pady=(0, 12))
 
         left_buttons = ttk.Frame(button_frame, style="Settings.TFrame")
         left_buttons.pack(side=tk.LEFT)
@@ -224,6 +144,96 @@ class AdvancedSettingsWindow:
             text="Confirmar Alterações",
             command=self.apply_settings,
             style="SettingsConfirm.TButton",
+        ).pack(side=tk.LEFT)
+
+        # Notebook com as abas de configuração
+        self.notebook = ttk.Notebook(container)
+        self.notebook.pack(expand=True, fill=tk.BOTH, pady=(0, 12))
+
+        self.create_format_tab()
+        self.create_timestamp_tab()
+        self.create_formatting_tab()
+        self.create_language_tab()
+        self.create_quality_tab()
+
+        # Prévia da transcrição
+        ttk.Label(
+            container,
+            text="Prévia da Transcrição",
+            style="SettingsTitle.TLabel"
+        ).pack(anchor=tk.W, pady=(12, 4))
+        
+        ttk.Label(
+            container,
+            text="Veja como suas configurações afetarão o resultado final",
+            style="SettingsDesc.TLabel"
+        ).pack(anchor=tk.W, pady=(0, 6))
+        
+        preview_scroll_frame = ttk.Frame(container, style="Settings.TFrame")
+        preview_scroll_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 12))
+        
+        preview_scrollbar = ttk.Scrollbar(preview_scroll_frame)
+        preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        self.preview_widget = tk.Text(
+            preview_scroll_frame,
+            height=6,
+            wrap="word",
+            bg="#0d1117",
+            fg="#c9d1d9",
+            relief="flat",
+            font=("Consolas", 9),
+            padx=12,
+            pady=10,
+            yscrollcommand=preview_scrollbar.set
+        )
+        self.preview_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        preview_scrollbar.config(command=self.preview_widget.yview)
+        
+        self.preview_widget.tag_configure("timestamp", foreground="#58a6ff", font=("Consolas", 8, "bold"))
+        self.preview_widget.tag_configure("speaker", foreground="#f78166", font=("Consolas", 9, "bold"))
+        self.preview_widget.tag_configure("text", foreground="#c9d1d9")
+        self.preview_widget.tag_configure("paragraph_break", spacing1=8)
+        
+        self.preview_widget.insert("1.0", "")
+        self.preview_widget.configure(state=tk.DISABLED)
+
+        # Seção de presets no final (sem fundo, apenas texto)
+        ttk.Label(
+            container,
+            text="Presets Pré-configurados",
+            style="SettingsTitle.TLabel"
+        ).pack(anchor=tk.W, pady=(12, 4))
+        
+        ttk.Label(
+            container, 
+            text="Carregue configurações prontas para diferentes tipos de conteúdo",
+            style="SettingsDesc.TLabel"
+        ).pack(anchor=tk.W, pady=(0, 10))
+        
+        preset_controls = ttk.Frame(container, style="Settings.TFrame")
+        preset_controls.pack(fill=tk.X)
+        
+        ttk.Label(preset_controls, text="Preset:", style="Settings.TLabel").pack(side=tk.LEFT, padx=(0, 6))
+        
+        preset_names = sorted(self.settings.available_presets().keys())
+        self.preset_var = tk.StringVar(value=preset_names[0] if preset_names else "")
+        
+        self.preset_combo = ttk.Combobox(
+            preset_controls,
+            textvariable=self.preset_var,
+            values=preset_names,
+            state="readonly",
+            width=25,
+        )
+        self.preset_combo.pack(side=tk.LEFT, padx=(0, 6))
+        self.preset_combo.bind("<<ComboboxSelected>>", self.on_preset_selected)
+        
+        ttk.Button(
+            preset_controls,
+            text="Aplicar",
+            command=self.load_selected_preset,
+            style="SettingsSmall.TButton",
         ).pack(side=tk.LEFT)
 
     def create_format_tab(self) -> None:
@@ -635,23 +645,37 @@ class AdvancedSettingsWindow:
         for key in ["fast", "balanced", "accurate"]:
             info = quality_info[key]
             
-            quality_frame = ttk.LabelFrame(frame, text=info["title"], 
-                                          style="SettingsSection.TLabelframe", padding=12)
-            quality_frame.pack(fill=tk.X, pady=6)
+            # Container para cada opção de qualidade
+            quality_container = ttk.Frame(frame, style="Settings.TFrame")
+            quality_container.pack(fill=tk.X, pady=6)
             
+            # Radiobutton com o título
             ttk.Radiobutton(
-                quality_frame,
-                text=info["desc"],
+                quality_container,
+                text=info["title"],
                 value=key,
                 variable=self.quality_var,
                 style="Settings.TRadiobutton",
             ).pack(anchor=tk.W)
             
+            # Descrição
             ttk.Label(
-                quality_frame,
+                quality_container,
+                text=info["desc"],
+                style="SettingsDesc.TLabel"
+            ).pack(anchor=tk.W, padx=(22, 0), pady=(2, 0))
+            
+            # Detalhes
+            ttk.Label(
+                quality_container,
                 text=info["details"],
                 style="SettingsDesc.TLabel"
-            ).pack(anchor=tk.W, padx=(22, 0), pady=(4, 0))
+            ).pack(anchor=tk.W, padx=(22, 0), pady=(2, 0))
+            
+            # Separador visual entre as opções
+            if key != "accurate":
+                separator = ttk.Frame(frame, style="Settings.TFrame", height=1)
+                separator.pack(fill=tk.X, pady=8)
 
     def on_setting_change(self) -> None:
         self.settings_changed = True
