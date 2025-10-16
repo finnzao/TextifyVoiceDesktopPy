@@ -567,7 +567,7 @@ class TranscriptionManager:
     def transcribe_file_process(model_path, config_dict, filepath, temp_dir, settings_dict, result_queue, progress_queue):
         """Processo separado para transcrição (evita problemas com multiprocessing)"""
         try:
-            # Atualiza progresso: carregando modelo (removido verbose para não poluir console)
+            # Atualiza progresso: carregando modelo
             try:
                 progress_queue.put({"status": "loading_model", "percent": 10})
             except:
@@ -603,7 +603,8 @@ class TranscriptionManager:
             # Configurações de transcrição
             transcribe_kwargs = {
                 "word_timestamps": settings.timestamp_mode == "word",
-                "verbose": False  # Desabilita verbose para não poluir console
+                "verbose": False,
+                "condition_on_previous_text": False,
             }
             
             # Configuração de idioma
@@ -731,90 +732,100 @@ class TranscriptionManager:
             paragraphs = TranscriptionManager._build_paragraphs(segments, settings)
             fp.write("\n\n".join(paragraphs))
 
+
     @staticmethod
     def _build_paragraphs(segments, settings):
-        """Constrói parágrafos baseados nas configurações - SIMPLIFICADO"""
+        """Constrói parágrafos - MÉTODO HÍBRIDO (RECOMENDADO)"""
+        if not segments:
+            logging.warning("_build_paragraphs: Nenhum segmento recebido")
+            return []
+
         paragraphs = []
-        
-        # Se parágrafos automáticos estão habilitados
-        if settings.auto_paragraphs:
-            # Agrupa segmentos por pausas
-            pause_threshold = 2.0 + (settings.paragraph_sensitivity / 100.0) * 3.0
-            groups = []
-            current_group = []
-            
-            for i, segment in enumerate(segments):
-                current_group.append(segment)
-                
-                # Verifica se deve criar novo parágrafo
-                if i < len(segments) - 1:
-                    current_end = segment.get("end", 0)
-                    next_start = segments[i + 1].get("start", 0)
-                    pause = next_start - current_end
-                    
-                    if pause > pause_threshold:
-                        # Cria parágrafo com o grupo atual
-                        groups.append(current_group)
-                        current_group = []
-            
-            # Adiciona último grupo
-            if current_group:
-                groups.append(current_group)
-            
-        else:
-            # Cada segmento vira um "grupo" individual
-            groups = [[seg] for seg in segments]
-        
-        # Processa cada grupo
-        for group in groups:
-            if not group:
+
+        # Configurações
+        pause_threshold = 1.0 + (settings.paragraph_sensitivity / 100.0) * 2.0  # 1.0s a 3.0s
+        max_segments_per_paragraph = max(3, int(3 + (settings.paragraph_sensitivity / 100.0) * 7))  # 3 a 10
+
+        logging.info(f"Configuração de parágrafos HÍBRIDA:")
+        logging.info(f"  - Limiar de pausa: {pause_threshold:.2f}s")
+        logging.info(f"  - Máx segmentos/parágrafo: {max_segments_per_paragraph}")
+        logging.info(f"  - Sensibilidade: {settings.paragraph_sensitivity}")
+        logging.info(f"  - Total de segmentos: {len(segments)}")
+
+        current_paragraph_segments = []
+        paragraph_count = 0
+
+        for i, segment in enumerate(segments):
+            text = segment.get("text", "").strip()
+            if not text:
                 continue
             
-            # Monta o texto do parágrafo
-            if settings.include_timestamps:
-                if settings.timestamp_mode == "paragraph" and len(group) > 0:
-                    # Timestamp no início do parágrafo
-                    timestamp = TranscriptionManager._format_timestamp_value(
-                        group[0].get("start", 0.0), settings.timestamp_format)
-                    texts = [seg.get("text", "").strip() for seg in group]
-                    combined = " ".join(texts)
-                    combined = TranscriptionManager._clean_text(combined, settings)
-                    if combined:
-                        paragraphs.append(f"[{timestamp}] {combined}")
-                        
-                elif settings.timestamp_mode == "segment":
-                    # Timestamp para cada segmento
-                    para_parts = []
-                    for seg in group:
-                        timestamp = TranscriptionManager._format_timestamp_value(
-                            seg.get("start", 0.0), settings.timestamp_format)
-                        text = TranscriptionManager._clean_text(seg.get("text", "").strip(), settings)
-                        if text:
-                            para_parts.append(f"[{timestamp}] {text}")
-                    if para_parts:
-                        paragraphs.append(" ".join(para_parts))
-                        
-                else:  # none ou word (word não implementado aqui por simplicidade)
-                    texts = [seg.get("text", "").strip() for seg in group]
-                    combined = " ".join(texts)
-                    combined = TranscriptionManager._clean_text(combined, settings)
-                    if combined:
-                        paragraphs.append(combined)
-            else:
-                # Sem timestamps
-                texts = [seg.get("text", "").strip() for seg in group]
-                combined = " ".join(texts)
-                combined = TranscriptionManager._clean_text(combined, settings)
-                if combined:
-                    paragraphs.append(combined)
-        
-        # Se não gerou nenhum parágrafo, retorna o texto completo
+            # Limpa e formata segmento
+            cleaned_text = TranscriptionManager._clean_text(text, settings)
+
+            # Adiciona timestamp se configurado
+            if settings.include_timestamps and settings.timestamp_mode == "segment":
+                timestamp = TranscriptionManager._format_timestamp_value(
+                    segment.get("start", 0.0), settings.timestamp_format)
+                cleaned_text = f"[{timestamp}] {cleaned_text}"
+
+            current_paragraph_segments.append(cleaned_text)
+
+            # Verifica se deve criar novo parágrafo
+            should_break = False
+            break_reason = ""
+
+            # Limite de segmentos atingido
+            if len(current_paragraph_segments) >= max_segments_per_paragraph:
+                should_break = True
+                break_reason = f"limite de {max_segments_per_paragraph} segmentos atingido"
+
+            # Pausa natural detectada (real ou inferida)
+            if not should_break and i < len(segments) - 1:
+                current_end = segment.get("end", 0)
+                next_start = segments[i + 1].get("start", 0)
+                pause = next_start - current_end
+
+                # Inferir pausa se necessário
+                if pause <= 0.1:
+                    text_length = len(text)
+                    has_sentence_end = text.rstrip().endswith(('.', '!', '?'))
+
+                    if has_sentence_end and text_length > 80:
+                        pause = 3.0  # Força uma pausa grande
+                        logging.info(f"Seg {i}: pausa INFERIDA = 3.0s (frase longa com pontuação final)")
+
+                # Checa se a pausa é suficiente
+                if pause > pause_threshold:
+                    should_break = True
+                    break_reason = f"pausa de {pause:.2f}s detectada"
+
+            #Último segmento
+            if i == len(segments) - 1:
+                should_break = True
+                break_reason = "último segmento"
+
+            # Cria parágrafo
+            if should_break:
+                if current_paragraph_segments:
+                    paragraph_text = " ".join(current_paragraph_segments)
+                    if paragraph_text.strip():
+                        paragraphs.append(paragraph_text)
+                        paragraph_count += 1
+                        logging.info(f"Parágrafo {paragraph_count}: {len(current_paragraph_segments)} segs, {len(paragraph_text)} chars ({break_reason})")
+                    current_paragraph_segments = []
+
+        # Fallback
         if not paragraphs:
-            full_text = " ".join(seg.get("text", "").strip() for seg in segments)
-            full_text = TranscriptionManager._clean_text(full_text, settings)
+            logging.warning("FALLBACK: Criando parágrafo único")
+            full_text = " ".join(
+                TranscriptionManager._clean_text(seg.get("text", "").strip(), settings) 
+                for seg in segments if seg.get("text", "").strip()
+            )
             if full_text:
                 paragraphs.append(full_text)
-        
+
+        logging.info(f"RESULTADO: {len(paragraphs)} parágrafos criados de {len(segments)} segmentos")
         return paragraphs
 
     @staticmethod
@@ -868,25 +879,28 @@ class TranscriptionManager:
 
     @staticmethod
     def _clean_text(text, settings):
-        """Limpa e formata texto de acordo com as configurações"""
+        """Limpa e formata texto - VERSÃO CORRIGIDA"""
+        if not text:
+            return ""
+
         cleaned = text.strip()
 
         # Aplica capitalização
         if settings.capitalization:
-            # Mantém a capitalização original ou capitaliza primeira letra
             if cleaned and not cleaned[0].isupper():
                 cleaned = cleaned[0].upper() + cleaned[1:]
         else:
-            # Remove capitalização
-            cleaned = cleaned.lower()
+            if cleaned:
+                cleaned = cleaned.lower()
 
         # Remove pontuação se configurado
         if not settings.punctuation:
             import string
-            # Remove toda pontuação
+            # Remove pontuação mas preserva espaços
             cleaned = ''.join(ch for ch in cleaned if ch not in string.punctuation or ch.isspace())
 
-        return cleaned
+        return cleaned  
+
 
     @staticmethod
     def _format_timestamp_value(seconds, fmt, target=None):
@@ -1359,31 +1373,27 @@ class TranscriptionWindow:
         
         self.create_file_list()
         
-        # Frame para progresso de transcrição individual
-        self.transcription_progress_frame = ttk.Frame(self.window, style="TFrame")
-        self.transcription_progress_frame.pack(fill=tk.X, padx=20, pady=(0, 10))
+        # Frame para progresso UNIFICADO
+        self.progress_frame = ttk.Frame(self.window, style="TFrame")
         
-        self.transcription_progress_label = ttk.Label(
-            self.transcription_progress_frame,
+        # Label de status detalhado
+        self.progress_label = ttk.Label(
+            self.progress_frame,
             text="",
             style="TLabel"
         )
-        self.transcription_progress_label.pack(anchor=tk.W, pady=(0, 5))
+        self.progress_label.pack(anchor=tk.W, pady=(0, 5))
         
-        self.transcription_progress_bar = ttk.Progressbar(
-            self.transcription_progress_frame,
-            mode='determinate',
-            maximum=100,
-            length=760
+        # Label de arquivo atual
+        self.current_file_label = ttk.Label(
+            self.progress_frame,
+            text="",
+            style="TLabel",
+            foreground=self.main_gui.colors['text_secondary']
         )
-        self.transcription_progress_bar.pack(fill=tk.X)
+        self.current_file_label.pack(anchor=tk.W, pady=(0, 5))
         
-        # Inicialmente esconde o frame de progresso
-        self.transcription_progress_frame.pack_forget()
-        
-        # Barra de progresso geral
-        self.progress_frame = ttk.Frame(self.window, style="TFrame")
-        
+        # Barra de progresso unificada
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(
             self.progress_frame,
@@ -1394,12 +1404,8 @@ class TranscriptionWindow:
         )
         self.progress_bar.pack(fill=tk.X, pady=(0, 5))
         
-        self.progress_label = ttk.Label(
-            self.progress_frame,
-            text="",
-            style="TLabel"
-        )
-        self.progress_label.pack(anchor=tk.W)
+        # Inicialmente não faz pack do progress_frame
+        # Será mostrado quando iniciar transcrição
         
         # Botões de ação
         self.buttons_frame = ttk.Frame(self.window, style="TFrame")
@@ -1465,16 +1471,15 @@ class TranscriptionWindow:
         return False
 
     def update_transcription_progress(self, progress_data):
-        """Atualiza a barra de progresso da transcrição individual"""
+        """Atualiza a barra de progresso unificada"""
         try:
-            # Verifica se os widgets existem antes de atualizar
             if not progress_data:
                 return
                 
-            if not hasattr(self, 'transcription_progress_label') or not self.transcription_progress_label:
+            if not hasattr(self, 'progress_label') or not self.progress_label:
                 return
                 
-            if not hasattr(self, 'transcription_progress_bar') or not self.transcription_progress_bar:
+            if not hasattr(self, 'progress_bar') or not self.progress_bar:
                 return
             
             status = progress_data.get("status", "")
@@ -1482,21 +1487,21 @@ class TranscriptionWindow:
             
             # Mapa de status para mensagens em português
             status_messages = {
-                "loading_model": "Carregando modelo...",
-                "extracting_audio": "Extraindo áudio...",
-                "transcribing": "Transcrevendo...",
-                "saving": "Salvando arquivo...",
-                "completed": "Concluído!"
+                "loading_model": "⏳ Carregando modelo de IA...",
+                "extracting_audio": "🎵 Extraindo áudio do arquivo...",
+                "transcribing": "🎤 Transcrevendo áudio...",
+                "saving": "💾 Salvando arquivo transcrito...",
+                "completed": " Concluído!"
             }
             
             message = status_messages.get(status, status)
             
             # Atualiza interface de forma segura
-            if self.transcription_progress_label.winfo_exists():
-                self.transcription_progress_label.config(text=f"{message} ({percent}%)")
+            if self.progress_label.winfo_exists():
+                self.progress_label.config(text=f"{message} ({percent}%)")
             
-            if self.transcription_progress_bar.winfo_exists():
-                self.transcription_progress_bar['value'] = percent
+            if self.progress_bar.winfo_exists():
+                self.progress_bar['value'] = percent
                 
             self.window.update_idletasks()
             
@@ -1524,9 +1529,8 @@ class TranscriptionWindow:
             self.window.after(0, lambda: self.btn_add.config(state=tk.NORMAL))
             return
         
-        # Mostra barras de progresso
+        # Mostra barra de progresso unificada
         self.window.after(0, lambda: self.progress_frame.pack(fill=tk.X, padx=20, pady=(0, 10)))
-        self.window.after(0, lambda: self.transcription_progress_frame.pack(fill=tk.X, padx=20, pady=(0, 10)))
         
         processed = 0
         
@@ -1540,18 +1544,18 @@ class TranscriptionWindow:
             if status not in ['Finalizado', 'Cancelado', 'Erro']:
                 self.current_item = item
                 
-                # Atualiza progresso geral
+                # Atualiza arquivo atual
                 filename = os.path.basename(values[0])
-                self.window.after(0, lambda f=filename: self.progress_label.config(text=f"Arquivo: {f}"))
+                self.window.after(0, lambda f=filename, p=processed, t=total_items: 
+                                self.current_file_label.config(text=f"Arquivo {p+1} de {t}: {f}"))
                 self.file_list.set(item, 'Status', 'Transcrição em progresso...')
                 
-                # Reseta e atualiza barra de progresso individual
-                self.window.after(0, lambda: self.transcription_progress_bar.configure(value=0))
-                self.window.after(0, lambda: self.transcription_progress_label.config(text="Iniciando transcrição..."))
+                # Reseta progresso
+                self.window.after(0, lambda: self.progress_var.set(0))
+                self.window.after(0, lambda: self.progress_label.config(text="Iniciando..."))
                 
-                # Mostra progresso em etapas simples
-                def simple_progress_callback(data):
-                    """Callback simplificado de progresso"""
+                def unified_progress_callback(data):
+                    """Callback unificado de progresso"""
                     if data and self.window.winfo_exists():
                         try:
                             self.window.after(0, lambda: self.update_transcription_progress(data))
@@ -1561,24 +1565,18 @@ class TranscriptionWindow:
                 try:
                     filepath = values[0]
                     
-                    # Atualiza para mostrar que está processando
-                    self.window.after(0, lambda: self.transcription_progress_label.config(text="Processando..."))
-                    self.window.after(0, lambda: self.transcription_progress_bar.configure(value=50))
-                    
                     result_path = self.main_gui.transcription_manager.transcribe_file(
                         filepath,
                         lambda path: self.update_transcription_result(item, path),
                         settings=self.main_gui.settings,
-                        progress_callback=simple_progress_callback
+                        progress_callback=unified_progress_callback
                     )
                     
-                    # Marca como finalizado
                     self.file_list.set(item, 'Status', 'Finalizado')
                     self.file_list.set(item, 'Transcrito', result_path)
                     
-                    # Atualiza barra para 100%
-                    self.window.after(0, lambda: self.transcription_progress_bar.configure(value=100))
-                    self.window.after(0, lambda: self.transcription_progress_label.config(text="Concluído!"))
+                    self.window.after(0, lambda: self.progress_var.set(100))
+                    self.window.after(0, lambda: self.progress_label.config(text=" Arquivo concluído!"))
                     
                 except ErrorHandlers.TranscriptionCancelledException:
                     self.file_list.set(item, 'Status', 'Cancelado')
@@ -1590,16 +1588,9 @@ class TranscriptionWindow:
                 finally:
                     self.current_item = None
                     processed += 1
-                    
-                    # Atualiza barra de progresso geral
-                    progress_percentage = (processed / total_items) * 100
-                    self.window.after(0, lambda p=progress_percentage: self.progress_var.set(p))
-                    self.window.after(0, lambda pr=processed, tot=total_items: 
-                                    self.progress_label.config(text=f"Progresso geral: {pr}/{tot} arquivos concluídos"))
         
-        # Esconde as barras de progresso ao finalizar
+        # Esconde barra ao finalizar
         self.window.after(0, lambda: self.progress_frame.pack_forget())
-        self.window.after(0, lambda: self.transcription_progress_frame.pack_forget())
         self.window.after(0, lambda: self.progress_var.set(0))
         
         self.main_gui.transcription_manager.is_transcribing = False
@@ -1691,7 +1682,8 @@ class TranscriptionWindow:
     def lift(self):
         """Traz janela para frente"""
         self.window.lift()
-        
+
+
 class QualitySelectionWindow:
     """Janela de seleção e download de modelos"""
     
